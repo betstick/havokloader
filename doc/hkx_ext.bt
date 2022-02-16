@@ -1,0 +1,236 @@
+//------------------------------------------------
+//--- 010 Editor v12.0.1 Binary Template
+//
+//      File: .HKX (Havok Data)
+//   Authors: Jed "Nyxojaele" Lang (originally)
+//   Version: 1.1
+//   Purpose: 
+//  Category: 
+// File Mask: 
+//  ID Bytes: 
+//   History: Found in SeanPesce's GitHub, expanded by betstick using Meowmartius' SoulsAssetPipeline.
+//   License: GPLv3 (just like the original version)
+//------------------------------------------------
+//--- Notes
+// versions:
+//  0x05 = Des
+//  0x08 = DS1
+//	0x?? = DS3
+//
+
+#ifndef _HKX_BT
+    #define _HKX_BT
+
+typedef struct
+{
+    int Src;
+    int Dst;
+} LocalFixupStruct <read=ReadLocalFixupStruct, bgcolor=0x88CC99>;
+
+string ReadLocalFixupStruct(LocalFixupStruct& lfs)
+{
+    string ret;
+    SPrintf(ret, "0x%X -> 0x%X", lfs.Src, lfs.Dst);
+    return ret;
+}
+
+typedef struct
+{
+    int Src;
+    int DstSectionIndex;
+    int Dst;
+} GlobalFixupStruct <read=ReadGlobalFixupStruct, bgcolor=0xAA8899>;
+
+string ReadGlobalFixupStruct(GlobalFixupStruct& gfs)
+{
+    string ret;
+    SPrintf(ret, "0x%X -> (%d)0x%X", gfs.Src, gfs.DstSectionIndex, gfs.Dst);
+    return ret;
+}
+
+typedef struct
+{
+    int src;
+    int sectionIndex;
+    int nameOffset;
+} VirtualFixupStruct <read=ReadVirtualFixupStruct, bgcolor=0x99AA88>;
+
+string ReadVirtualFixupStruct(VirtualFixupStruct& vfs)
+{
+    string ret;
+    string str = ReadString(Sections[vfs.sectionIndex].absoluteDataStart + vfs.nameOffset);
+    SPrintf(ret, "0x%X (%d)\"%s\"", vfs.src, vfs.sectionIndex, str);
+    return ret;
+}
+
+typedef struct
+{
+	uint signature;
+	byte strStart; Assert(strStart == 0x09);
+	string name;
+} ClassName <read=ReadClassName, bgcolor=cGreen>;
+
+string ReadClassName(ClassName& cn)
+{
+	string str;
+	SPrintf(str, "Name: %s", cn.name);
+	return str;
+}
+
+typedef struct
+{
+    char sectionTag[19];
+    byte pad; Assert(pad == -1);
+    int absoluteDataStart <format=hex>;
+    int localFixupsOffset <format=hex>;     //From AbsoluteDataStart
+    int globalFixupsOffset <format=hex>;    //From AbsoluteDataStart
+    int virtualFixupsOffset <format=hex>;   //From AbsoluteDataStart
+    int exportsOffset <format=hex>;         //From AbsoluteDataStart
+    int importsOffset <format=hex>;         //From AbsoluteDataStart
+    int endOffset <format=hex>;             //Also the section size
+
+    local long oldPos = FTell();
+
+    local int dataSize = localFixupsOffset;
+    if (dataSize != 0)
+    {
+        FSeek(absoluteDataStart);
+		if(sectionTag == "__classnames__")
+		{
+			//Printf("AAAAAH");
+
+			//Determine where the class names actually end
+			FSeek(absoluteDataStart + localFixupsOffset - 1);
+			do
+			{
+				//Printf("pos: %x\n",FTell());
+				FSkip(-1);
+				//local byte dataEndPadding <format=hex>;
+			} while(ReadByte() != 0);
+
+			local int dataEndPos = FTell();
+
+			FSeek(absoluteDataStart);
+
+			struct
+			{			
+				while(FTell() < dataEndPos)
+				{
+					ClassName class;
+				}
+			} classes;
+
+			FSeek(absoluteDataStart);
+		}
+		else
+		{
+			//Printf("OOOOH");
+		}
+        byte data[dataSize] <bgcolor=0xCC9988>;
+    }
+
+    dataSize = globalFixupsOffset - localFixupsOffset;
+    if (dataSize != 0)
+    {
+        FSeek(absoluteDataStart + localFixupsOffset);
+        LocalFixupStruct localFixups[dataSize/8];
+    }
+
+    dataSize = virtualFixupsOffset - globalFixupsOffset;
+    if (dataSize != 0)
+    {
+        FSeek(absoluteDataStart + globalFixupsOffset);
+        GlobalFixupStruct globalFixups[dataSize/0xC];
+    }
+
+    dataSize = exportsOffset - virtualFixupsOffset;
+    if (dataSize != 0)
+    {
+        FSeek(absoluteDataStart + virtualFixupsOffset);
+        VirtualFixupStruct virtualFixups[dataSize/0xC];
+    }
+
+    dataSize = importsOffset - exportsOffset;
+    if (dataSize != 0)
+    {
+        FSeek(absoluteDataStart + importsOffset);
+        byte exports[dataSize] <bgcolor=0x8899AA>;
+        Printf("Exports detected! Implement src, name");
+    }
+
+    dataSize = endOffset - importsOffset;
+    if (dataSize != 0)
+    {
+        FSeek(absoluteDataStart - importsOffset);
+        byte imports[dataSize] <bgcolor=0x555555, fgcolor=0xFFFFFF>;
+        Printf("Imports detected! Implement src, name");
+    }
+
+    FSeek(oldPos);
+} SectionHeader <bgcolor=0x8899CC>;
+
+/*typedef struct
+{
+    float m0;
+    float m1;
+    float m2;
+    float m3;
+} MatrixRowStruct <read=ReadMatrixRowStruct>;
+string ReadMatrixRowStruct(MatrixRowStruct& mrs)
+{
+    string ret;
+    SPrintf(ret, "%f, %f, %f, %f", mrs.m0, mrs.m1, mrs.m2, mrs.m3);
+    return ret;
+}
+
+typedef struct
+{
+    MatrixRowStruct Row0;
+    MatrixRowStruct Row1;
+    MatrixRowStruct Row2;
+    MatrixRowStruct Row3;
+} MatrixStruct;*/
+
+struct
+{
+    byte signature[8];
+    int userTag;
+    int version;
+    byte pointerSize; //pointer size?
+    byte endian;   //0x01 = Little Endian
+    byte paddingOption;   //0x01 = PS3?
+    byte baseClass;
+    int sectionCount;
+    int contentsSectionIndex;
+    int contentsSectionOffset <format=hex>;
+    int contentsClassNameSectionIndex;
+    int contentsClassNameSectionOffset <format=hex>;
+    char contentsVersion[16];
+    int flags <format=hex>;
+	
+	// Later versions of Havok have an extended header
+	if(version >= 0x0B)
+	{
+		short unk3C;
+		short sectionOffset;
+
+		if(sectionOffset > 0)
+		{
+			int unk40;
+			int unk44;
+			int unk48;
+			int unk4C;
+		}
+		
+		FSeek(Ftell() + 0x40 + sectionOffset);
+	}
+	else
+	{
+		int padding; Assert(padding == 0xFFFFFFFF);
+	}
+    
+} Header <bgcolor=0xCCCCCC>;
+
+SectionHeader Sections[Header.sectionCount] <optimize=false>;
+
+#endif // _HKX_BT

@@ -1,0 +1,2 @@
+## HKX
+Read the docs in `docs/` to get an understanding of this format. I'm currently only including the classes needed for PTDE, as there are well over 1,000 unqiue classes in the HKX spec. Not to mention custom implementations by various 3rd parties like Fromsoftware.
