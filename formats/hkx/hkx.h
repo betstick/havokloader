@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include "cmem.h"
 
-struct HKX_Header_Start
+typedef struct
 {
 	char magic[8];
 	int userTag;
@@ -17,9 +17,9 @@ struct HKX_Header_Start
 	int contentsClassNameSectionOffset;
 	char contentsVersion[16];
 	int flags;
-};
+} Hkx_Header_Start;
 
-struct HKX_Header_Ext
+typedef struct
 {
 	short unk3C;
 	short sectionOffset;
@@ -29,15 +29,15 @@ struct HKX_Header_Ext
 	int unk44;
 	int unk48;
 	int unk4C;
-};
+} Hkx_Header_Ext;
 
-struct HKX_Header
+typedef struct 
 {
-	struct HKX_Header_Start* start;
-	struct HKX_Header_Ext* ext;
-};
+	Hkx_Header_Start* start;
+	Hkx_Header_Ext* ext;
+} Hkx_Header;
 
-struct HKX_Section_Header
+typedef struct
 {
 	char sectionTag[19];
 	char pad;
@@ -48,49 +48,52 @@ struct HKX_Section_Header
 	int exportsOffset;
 	int importsOffset;
 	int endOffset;
-};
-
-struct HKX_Section_ClassName
-{
-	unsigned int signature;
-	char strnStart; //assert 0x09
-};
-
-struct HKX_Section_LocalFixup
-{
-	int src;
-	int dst;
-};
-
-struct HKX_Section_GlobalFixup
-{
-	int src;
-	int sec; //section index of destination
-	int dst;
-};
-
-struct HKX_Section_VirtualFixup
-{
-	int src;
-	int sec;
-	int nof; //name offset
-};
-
-struct HKX_Section
-{
-	struct HKX_Section_Header*              header;
-	struct HKX_Section_ClassName*       classNames; //only if tag is classnames
-	struct HKX_Section_LocalFixup*     localFixups;
-	struct HKX_Section_GlobalFixup*   globalFixups;
-	struct HKX_Section_VirtualFixup* virtualFixups;
-
-	char* data; //only if datasize != 0
-};
+} Hkx_Section_Header;
 
 typedef struct
 {
-	struct HKX_Header* header;
-	struct HKX_Section* sections;
-} HKX;
+	unsigned int signature;
+	char padding; //always 0x09
+	char name[]; //null terminated
+} Hkx_Section_ClassName;
 
-HKX* openHKX();
+typedef struct
+{
+	unsigned int src;
+	unsigned int dst;
+} Hkx_Section_LocalFixup;
+
+typedef struct
+{
+	unsigned int src;
+	unsigned int sec; //section index of destination
+	unsigned int dst;
+} Hkx_Section_GlobalFixup;
+
+typedef struct
+{
+	unsigned int src;
+	unsigned int sec;
+	unsigned int nof; //name offset
+} Hkx_Section_VirtualFixup;
+
+typedef struct
+{
+	Hkx_Section_Header*              header;
+	Hkx_Section_ClassName*       classNames; //only if tag is classnames
+	Hkx_Section_LocalFixup*     localFixups;
+	Hkx_Section_GlobalFixup*   globalFixups;
+	Hkx_Section_VirtualFixup* virtualFixups;
+
+	char* data; //only if datasize != 0
+	char* exports;
+	char* imports;
+} Hkx_Section;
+
+typedef struct
+{
+	Hkx_Header* header;
+	Hkx_Section* sections;
+} Hkx;
+
+Hkx* openHkx(MEM* src);

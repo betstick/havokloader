@@ -17,6 +17,17 @@ enum havok_version {
 	HKUNKVER
 };
 
+enum HkxVersion
+{
+	HKXDES,
+	HKXBB,
+	HKXSEK,
+	HKXER,
+	HKXDS1,
+	HKXDS2,
+	HKXDS3
+};
+
 havok_version determineVersion(int ver)
 {
 	havok_version version;
