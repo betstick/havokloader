@@ -10,4 +10,13 @@ Sections can have "fixups" in them. Fixups are essentially a memory/pointer map 
 ```
 Fixups are just things like patching in pointers after the hkx file is loaded. Packfiles are designed to be read directly into memory and cast into c++ objects, but pointers need to be patched in to be relative to the memory they are loaded in
 The virtual fixups are to copy in the address of the class’s vtable into the c++ classes, but I use it to determine which class a given chunk of memory is
+
+Pack files are actually pretty straightforward to read once you understand them
+Read all the bytes, patch the pointers to each other, copy paste the vtables
+```
+
+On the subject of tag files and their diffs from packfiles, from Katalash:
+```
+Tag files basically store all the fields that aren’t 0 and use some hyperpacked format
+So deserializing is more work
 ```
