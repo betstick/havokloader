@@ -5,6 +5,8 @@
 
 import xml.etree.ElementTree as ET
 from enum import Enum
+from os import listdir
+from os.path import isfile, join
 
 #might need to convert this to an array :(
 types = [
@@ -13,13 +15,17 @@ types = [
 	["TYPE_INT8","signed char",1],
 	["TYPE_UINT8","unsigned char",1],
 	["TYPE_INT16","short",2],
+	["TYPE_UINT16","unsigned short",2],
 	["TYPE_INT32","int",4],
+	["TYPE_UINT32","unsigned int",4],
+	["TYPE_INT64","long",8],
+	["TYPE_UINT64","unsigned long",8],
 	["TYPE_STRINGPTR","unsigned long",8],
 	["TYPE_POINTER","unsigned long",8],
 	["TYPE_REAL","float",4],
 	["TYPE_VOID","void",8],
 	["TYPE_QSTRANSFORM","qstransform",48],
-	["hkbEvent","hkbEvent",24]
+	#["hkbEvent","hkbEvent",24]
 ]
 
 #there's certainly a cleaner way to do this :/
@@ -27,26 +33,45 @@ def getTypeInfo(type_in):
 	for t in types:
 		if t[0] == type_in:
 			return t
+		
+	else:
+		return [type_in,type_in,"sizeof("+type_in+")"]
 
 def parseType(member):
 	info = []
 	vtype = member.attrib.get('vtype')
 
-	if vtype == 'TYPE_ENUM':
-		info = getTypeInfo(member.attrib.get('vsubtype'))
-	elif vtype == 'TYPE_STRUCT':
-		info = getTypeInfo(member.attrib.get('ctype'))
-	elif vtype == 'TYPE_ARRAY':
-		info = getTypeInfo(member.attrib.get('vsubtype'))
-	else:
-		info = getTypeInfo(vtype)
+	typeFixes = [
+		['TYPE_ENUM','vsubtype'],
+		['TYPE_STRUCT','ctype'],
+		['TYPE_ARRAY','vsubtype'],
+	]
+
+	i = True
+	temp = vtype
+
+	while i == True:
+		m = False
+		for t in typeFixes:
+			if temp == t[0]:
+				m = True
+				temp = member.attrib.get(t[1])
+		if m == False:
+			info = getTypeInfo(temp)
+			i = False
+
+	#if vtype == 'TYPE_ENUM':
+	#	info = getTypeInfo(member.attrib.get('vsubtype'))
+	#elif vtype == 'TYPE_STRUCT':
+	#	info = getTypeInfo(member.attrib.get('ctype'))
+	#elif vtype == 'TYPE_ARRAY':
+	#	info = getTypeInfo(member.attrib.get('vsubtype'))
+	#else:
+	#	info = getTypeInfo(vtype)
 
 	return info
 
 class hkEnum:
-	name = "none"
-	data = []
-
 	def __init__(self, name):
 		self.name = name
 		self.data = []
@@ -99,26 +124,26 @@ class hkMem:
 		return ret
 
 	def implementRead(self):
-		ret = "mread(src," + str(self.t_size) + ",1,x->" + self.name + ");\n"
-		if self.m_size > self.t_size:
-			ret += "\tmseek(src," + str(self.m_size - self.t_size) + ",SEEK_CUR);\n"
+		#ret = "mread(src," + str(self.t_size) + ",1,x->" + self.name + ");\n"
+		ret = "mread(&x->" + self.name + "," + str(self.t_size) + ",1,src);\n"
+		if isinstance(self.t_size,int):
+			if self.m_size > self.t_size:
+				ret += "\tmseek(src," + str(self.m_size - self.t_size) + ",SEEK_CUR);\n"
 		return ret
 
 	def implementWrite(self):
-		ret = "mwrite(" + self.name + "," + str(self.t_size) + ",1,dst);\n"
-		if self.m_size > self.t_size:
-			ret += "\tmseek(dst," + str(self.m_size - self.t_size) + ",SEEK_CUR);\n"
+		ret = "mwrite((char*)" + self.name + "," + str(self.t_size) + ",1,dst);\n"
+		if isinstance(self.t_size,int):
+			if self.m_size > self.t_size:
+				ret += "\tmseek(dst," + str(self.m_size - self.t_size) + ",SEEK_CUR);\n"
 		return ret
 
 class hkClass:
-	name = "none"
-	parent = "none"
-	enums = []
-	members = []
-
 	def __init__(self,root):
 		self.name = root.attrib.get('name')
 		self.parent = root.attrib.get('parent')
+		self.enums = []
+		self.members = []
 
 		offset = 0
 
@@ -147,14 +172,19 @@ class hkClass:
 					self.members.append(m)
 
 	def define(self):
-		ret = '#pragma once\n#include "' + self.parent + '.h"\n\n'
+		ret = '#pragma once\n' + '#include "cmem.h"\n'
+		
+		if self.parent is not None:
+			ret += '#include "' + self.parent + '.h"\n\n'
 
-		for e in self.enums:
-			ret += e.define() + "\n\n"
+		if len(self.enums) > 0:
+			for e in self.enums:
+				ret += e.define() + "\n"
 
-		ret += "class " + self.name + "\n" + "{\n\tpublic:\n"
-
-		ret += "\t" + self.parent + " base;\n"
+		ret += "\nclass " + self.name + "\n" + "{\n\tpublic:\n"
+		
+		if self.parent is not None:
+			ret += "\t" + self.parent + " base;\n"
 
 		for m in self.members:
 			ret += "\t" + m.define()
@@ -174,19 +204,22 @@ class hkClass:
 		ret = '#pragma once\n#include "' + self.name + '.h"\n\n'
 
 		#reader
-		ret += self.name + "::" + self.name + "* read(MEM* src)\n{\n"
+		ret += self.name + "* " + self.name + "::read(MEM* src)\n{\n"
 		ret += "\t" + self.name + "* x = new " + self.name + ";\n\n"
-		ret += "\tx->base.read(src);\n"
+		
+		if self.parent is not None:
+			ret += "\tx->base.read(src);\n"
+
 		for m in self.members:
 			ret += "\t" + m.implementRead()
 		ret += "\n\treturn x;\n"
 		ret += "};\n"
 
 		#writer
-		ret += self.name + "::void write(MEM* dst)\n{\n"
-		for m in self.members:
-			ret += "\t" + m.implementWrite()
-		ret += "};\n"
+		#ret += "\nvoid " + self.name + "::write(MEM* dst)\n{\n"
+		#for m in self.members:
+		#	ret += "\t" + m.implementWrite()
+		#ret += "};\n"
 
 		return ret
 
@@ -196,8 +229,23 @@ def parseFile(file):
 
 	hkc = hkClass(root)
 
-	print(hkc.define())
-	print(hkc.implmenet())
+	return [(hkc.define()),(hkc.implmenet())]
 
 #parseFile("reference/classxmlds3/CustomBoneFixModifier.xml")
-parseFile("reference/classxmlds3/CustomClipGenerator.xml")
+#parseFile("reference/classxmlds3/CustomClipGenerator.xml")
+
+paths = ["reference/classxmlds3/"]
+
+for path in paths:
+	for xml in listdir(path):
+		if isfile(join(path,xml)):
+			print("Generating class for: " + xml + "...")
+
+			hfile = open(join("autogen/",xml).replace(".xml",".h"),"w")
+			cfile = open(join("autogen/",xml).replace(".xml",".cpp"),"w")
+			
+			hfile.write(parseFile(join(path,xml))[0])
+			cfile.write(parseFile(join(path,xml))[1])
+
+			hfile.close()
+			cfile.close()
