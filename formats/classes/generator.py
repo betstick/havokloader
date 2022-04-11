@@ -20,6 +20,8 @@ types = [
 	["TYPE_UINT32","unsigned int",4],
 	["TYPE_INT64","long",8],
 	["TYPE_UINT64","unsigned long",8],
+	["TYPE_LONG","long",8],
+	["TYPE_ULONG","unsigned long",8],
 	["TYPE_STRINGPTR","unsigned long",8],
 	["TYPE_POINTER","unsigned long",8],
 	["TYPE_REAL","float",4],
@@ -124,19 +126,20 @@ class hkMem:
 		return ret
 
 	def implementRead(self):
-		#ret = "mread(src," + str(self.t_size) + ",1,x->" + self.name + ");\n"
 		ret = "mread(&x->" + self.name + "," + str(self.t_size) + ",1,src);\n"
+
 		if isinstance(self.t_size,int):
 			if self.m_size > self.t_size:
 				ret += "\tmseek(src," + str(self.m_size - self.t_size) + ",SEEK_CUR);\n"
+		
 		return ret
 
-	def implementWrite(self):
-		ret = "mwrite((char*)" + self.name + "," + str(self.t_size) + ",1,dst);\n"
-		if isinstance(self.t_size,int):
-			if self.m_size > self.t_size:
-				ret += "\tmseek(dst," + str(self.m_size - self.t_size) + ",SEEK_CUR);\n"
-		return ret
+	#def implementWrite(self):
+	#	ret = "mwrite((char*)" + self.name + "," + str(self.t_size) + ",1,dst);\n"
+	#	if isinstance(self.t_size,int):
+	#		if self.m_size > self.t_size:
+	#			ret += "\tmseek(dst," + str(self.m_size - self.t_size) + ",SEEK_CUR);\n"
+	#	return ret
 
 class hkClass:
 	def __init__(self,root):
@@ -144,6 +147,7 @@ class hkClass:
 		self.parent = root.attrib.get('parent')
 		self.enums = []
 		self.members = []
+		self.size = root.attrib.get('size')
 
 		offset = 0
 
@@ -172,10 +176,10 @@ class hkClass:
 					self.members.append(m)
 
 	def define(self):
-		ret = '#pragma once\n' + '#include "cmem.h"\n'
+		ret = '#pragma once\n' + '#include <stdio.h>\n#include "cmem.h"\n'
 		
 		if self.parent is not None:
-			ret += '#include "' + self.parent + '.h"\n\n'
+			ret += '#include "' + self.parent + '.h"\n'
 
 		if len(self.enums) > 0:
 			for e in self.enums:
@@ -189,11 +193,12 @@ class hkClass:
 		for m in self.members:
 			ret += "\t" + m.define()
 
-		ret += "\n\t" + self.name + "();\n"
+		#ret += "\n\t" + self.name + "();\n"
 
-		ret += "\n\t" + self.name + "* read(MEM* src);\n"
+		ret += "\n\tstatic " + self.name + "* " + self.name + "Read(MEM* src);\n"
 
-		ret += "\n\tvoid write(MEM* src);\n"
+		#write is currently not functional
+		#ret += "\n\tvoid write(MEM* src);\n"
 	
 		ret += "};\n"
 
@@ -204,18 +209,26 @@ class hkClass:
 		ret = '#pragma once\n#include "' + self.name + '.h"\n\n'
 
 		#reader
-		ret += self.name + "* " + self.name + "::read(MEM* src)\n{\n"
+		ret += self.name + "* " + self.name + "::" + self.name + "Read(MEM* src)\n{\n"
 		ret += "\t" + self.name + "* x = new " + self.name + ";\n\n"
 		
 		if self.parent is not None:
-			ret += "\tx->base.read(src);\n"
+			ret += "\tx->base = *" + self.parent + "::" + self.parent + "Read(src);\n"
+
+		size = 0
 
 		for m in self.members:
 			ret += "\t" + m.implementRead()
+			size += m.m_size
+
+		if size < int(self.size):
+			ret += "\tmseek(src," + str(int(self.size) - size) + ",SEEK_CUR);\n"
+
 		ret += "\n\treturn x;\n"
+
 		ret += "};\n"
 
-		#writer
+		#writer disabled for now cause it's really bad
 		#ret += "\nvoid " + self.name + "::write(MEM* dst)\n{\n"
 		#for m in self.members:
 		#	ret += "\t" + m.implementWrite()
@@ -236,6 +249,8 @@ def parseFile(file):
 
 paths = ["reference/classxmlds3/"]
 
+stdafx = open("autogen/stdafx.h","w")
+
 for path in paths:
 	for xml in listdir(path):
 		if isfile(join(path,xml)):
@@ -249,3 +264,7 @@ for path in paths:
 
 			hfile.close()
 			cfile.close()
+
+			stdafx.write('#include "' + xml.replace(".xml",".h") + '"\n')
+
+stdafx.close()
