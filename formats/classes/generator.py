@@ -12,6 +12,7 @@ from os.path import isfile, join
 types = [
 	["TYPE_VECTOR4","vec4",16],
 	["TYPE_BOOL","bool",1],
+	["TYPE_CHAR","char",1],
 	["TYPE_INT8","signed char",1],
 	["TYPE_UINT8","unsigned char",1],
 	["TYPE_INT16","short",2],
@@ -23,12 +24,20 @@ types = [
 	["TYPE_LONG","long",8],
 	["TYPE_ULONG","unsigned long",8],
 	["TYPE_STRINGPTR","unsigned long",8],
-	["TYPE_POINTER","unsigned long",8],
+	#["TYPE_POINTER","unsigned long",8],
+	["TYPE_CSTRING","char*",8],
+	["TYPE_HALF","half",2],
 	["TYPE_REAL","float",4],
 	["TYPE_VOID","void",8],
-	["TYPE_QSTRANSFORM","qstransform",48],
-	#["hkbEvent","hkbEvent",24]
+	["TYPE_QSTRANSFORM","qstransform",64],
+	["TYPE_QUATERNION","quaternion",16],
+	["TYPE_TRANSFORM","transform",64],
+	["TYPE_MATRIX2","mat2",8],
+	["TYPE_MATRIX3","mat3",12],
+	["TYPE_MATRIX4","mat4",16],
 ]
+
+tag = '/* This file was automatically generated from XML. */'
 
 #there's certainly a cleaner way to do this :/
 def getTypeInfo(type_in):
@@ -47,82 +56,114 @@ def parseType(member):
 		['TYPE_ENUM','vsubtype'],
 		['TYPE_STRUCT','ctype'],
 		['TYPE_ARRAY','vsubtype'],
+		['TYPE_SIMPLEARRAY','vsubtype'],
+		['TYPE_FLAGS','vsubtype'],
+		['TYPE_CSTRING','vsubtype'],
+		['TYPE_POINTER','ctype']
 	]
 
-	i = True
+	#i = True
+	#temp = vtype
+
+	#resolves types to a "real" type. cursed. do not touch.
+	#while i == True:
+	#	m = False
+	#	for t in typeFixes:
+	#		if temp == t[0]:
+	#			m = True
+	#			temp = member.attrib.get(t[1])
+	#			if temp is None:
+	#				temp = member.attrib.get('vsubtype')
+	#			if temp == 'TYPE_CSTRING':
+	#				temp = 'char*'
+	#	if m == False:
+	#		info = getTypeInfo(temp)
+	#		i = False
+
 	temp = vtype
 
-	while i == True:
-		m = False
-		for t in typeFixes:
-			if temp == t[0]:
-				m = True
-				temp = member.attrib.get(t[1])
-		if m == False:
-			info = getTypeInfo(temp)
-			i = False
+	#this way is almost dumber. but its easy to modify
+	if temp == 'TYPE_ARRAY':
+		temp = member.attrib.get('vsubtype')
+		if temp == 'TYPE_PONTER':
+			temp = member.attrib.get('ctype')
+	elif temp == 'TYPE_ENUM':
+		temp = member.attrib.get('etype')
+		if temp == None:
+			temp = member.attrib.get('vsubtype')
+	elif temp == 'TYPE_STRUCT':
+		temp = member.attrib.get('ctype')
+	elif temp == 'TYPE_SIMPLEARRAY':
+		temp = member.attrib.get('vsubtype')
+	elif temp == 'TYPE_FLAGS':
+		temp = member.attrib.get('vsubtype')
+	elif temp == 'TYPE_POINTER':
+		temp = member.attrib.get('vsubtype')
+		if temp == 'TYPE_STRUCT':
+			temp = member.attrib.get('ctype')
 
-	#if vtype == 'TYPE_ENUM':
-	#	info = getTypeInfo(member.attrib.get('vsubtype'))
-	#elif vtype == 'TYPE_STRUCT':
-	#	info = getTypeInfo(member.attrib.get('ctype'))
-	#elif vtype == 'TYPE_ARRAY':
-	#	info = getTypeInfo(member.attrib.get('vsubtype'))
-	#else:
-	#	info = getTypeInfo(vtype)
+	if temp == None:
+		print(member.attrib.get('name'))
+
+	info = getTypeInfo(temp)
 
 	return info
 
 class hkEnum:
-	def __init__(self, name):
-		self.name = name
+	def __init__(self, enum):
+		self.name = enum.attrib.get('name')
 		self.data = []
 
-	def insert2(self, key, value):
+		for i in enum:
+			name = i.attrib.get('name')
+			value = int(i.attrib.get('value'))
+			self.data.append([name,value])
+
+	def insert(self, key, value):
 		self.data.append([key,value])
 
 	def define(self):
 		ret = "enum " + self.name + "\n{\n"
 
 		for d in self.data:
-			ret += "\t" + d[0] + " = " + d[1] + ",\n"
+			ret += "\t" + str(d[0]) + " = " + str(d[1]) + ",\n"
 
-		ret += "};"
+		ret += "};\n"
 
 		return ret
 
 class hkMem:
-	name = "none"
-	vtype = "none"
-	vsubtype = "none"
-	arrsize = 0 #how many members in the array
-
-	m_size = 0 #full size of the member
-	t_size = 0 #size that the type should be
-
 	def __init__(self, hkmember, offset):
-		self.name = hkmember.attrib.get('name')
+		#rename to prevent name collision with C/C++
+		self.name = "m_" + hkmember.attrib.get('name')
 
-		self.vtype = hkmember.attrib.get('vtype')
-		self.vsubtype = hkmember.attrib.get('vsubtype')
-		self.arrsize = hkmember.attrib.get('arrsize')
+		self.vtype = str(hkmember.attrib.get('vtype'))
+		self.vsubtype = str(hkmember.attrib.get('vsubtype'))
+		self.arrsize = int(hkmember.attrib.get('arrsize'))
 
 		self.m_size = int(offset)
 		
 		info = parseType(hkmember)
 		self.m_type = info[1]
-		self.t_size = info[2]
+		self.t_size = info[2] #this CAN be a string!
 		#self.m_offset = hkmember.attrib.get('offset')
 
 	def define(self):
-		ret = str(self.m_type)
+		ret = self.m_type
 
-		if self.vtype == "TYPE_ARRAY":
-			ret += "* "
+		#only use pointer when array AND size is unkown
+		if self.vtype == "TYPE_ARRAY" or self.vtype == "TYPE_SIMPLEARRAY":
+			if self.arrsize == 0:
+				ret += "* "
 		else:
 			ret += " "
 
-		ret += self.name + ";\n"
+		ret += self.name
+		
+		if self.arrsize > 0:
+			ret += "[" + str(self.arrsize) + "]"
+
+		ret += ";\n"
 		return ret
 
 	def implementRead(self):
@@ -134,33 +175,22 @@ class hkMem:
 		
 		return ret
 
-	#def implementWrite(self):
-	#	ret = "mwrite((char*)" + self.name + "," + str(self.t_size) + ",1,dst);\n"
-	#	if isinstance(self.t_size,int):
-	#		if self.m_size > self.t_size:
-	#			ret += "\tmseek(dst," + str(self.m_size - self.t_size) + ",SEEK_CUR);\n"
-	#	return ret
-
 class hkClass:
 	def __init__(self,root):
 		self.name = root.attrib.get('name')
 		self.parent = root.attrib.get('parent')
 		self.enums = []
 		self.members = []
-		self.size = root.attrib.get('size')
+		self.deps = []
+		self.size = int(root.attrib.get('size'))
 
 		offset = 0
 
+		#setup enums and member data
 		for child in root:
 			if child.tag == 'enums':
-				for cenum in child:
-					e = hkEnum(cenum.attrib.get('name'))
-					e.data = [] #idk, this is needed??!?!?!
-
-					for item in cenum:
-						e.insert2(item.attrib.get('name'),item.attrib.get('value'))
-
-					self.enums.append(e)
+				for enum in child:
+					self.enums.append(hkEnum(enum))
 
 			if child.tag == 'members':
 				for i, member in enumerate(child,start=0):
@@ -175,17 +205,46 @@ class hkClass:
 					m = hkMem(member,offset)
 					self.members.append(m)
 
-	def define(self):
-		ret = '#pragma once\n' + '#include <stdio.h>\n#include "cmem.h"\n'
-		
+		#setup deps
+		self.deps.append("<stdio.h>")
+		self.deps.append('"cmem.h"')
+		self.deps.append('"../../../lib/half/half.hpp"')
+		self.deps.append('"../manual/include.h"')
+		#self.deps.append('"stdafx.h"') //gonna leave this out for now
+
+		#add deps for types not in the types list
+		for m in self.members:
+			match = False
+			
+			for t in types:
+				if t[1] == m.m_type:
+					match = True
+
+			for e in self.enums:
+				if str(e.name) == str(m.m_type):
+					match = True
+			
+			if match == False:
+				self.deps.append('"' + m.m_type + '.h"')
+
 		if self.parent is not None:
-			ret += '#include "' + self.parent + '.h"\n'
+			self.deps.append('"' + self.parent + '.h"')
+
+	def define(self):
+		ret = tag + "\n"
+
+		ret += '#pragma once\n'
+		
+		for d in self.deps:
+			ret += '#include ' + d + '\n'
+
+		ret += "using half_float::half;\n\n"
 
 		if len(self.enums) > 0:
 			for e in self.enums:
 				ret += e.define() + "\n"
 
-		ret += "\nclass " + self.name + "\n" + "{\n\tpublic:\n"
+		ret += "class " + self.name + "\n" + "{\n\tpublic:\n"
 		
 		if self.parent is not None:
 			ret += "\t" + self.parent + " base;\n"
@@ -205,8 +264,12 @@ class hkClass:
 		return ret
 
 	def implmenet(self):
+		ret = tag + "\n"
+
 		#headers
-		ret = '#pragma once\n#include "' + self.name + '.h"\n\n'
+		ret += '#pragma once\n#include "' + self.name + '.h"\n\n'
+
+		ret += "using half_float::half;\n"
 
 		#reader
 		ret += self.name + "* " + self.name + "::" + self.name + "Read(MEM* src)\n{\n"
@@ -249,22 +312,25 @@ def parseFile(file):
 
 paths = ["reference/classxmlds3/"]
 
-stdafx = open("autogen/stdafx.h","w")
+inc = open("autogen/autogen.h","w")
 
 for path in paths:
 	for xml in listdir(path):
 		if isfile(join(path,xml)):
-			print("Generating class for: " + xml + "...")
+			#print("Generating class for: " + xml + "...")
 
 			hfile = open(join("autogen/",xml).replace(".xml",".h"),"w")
 			cfile = open(join("autogen/",xml).replace(".xml",".cpp"),"w")
 			
-			hfile.write(parseFile(join(path,xml))[0])
-			cfile.write(parseFile(join(path,xml))[1])
+			#calc once, don't run parse file twice
+			res = parseFile(join(path,xml))
+
+			hfile.write(res[0])
+			cfile.write(res[1])
 
 			hfile.close()
 			cfile.close()
 
-			stdafx.write('#include "' + xml.replace(".xml",".h") + '"\n')
+			inc.write('#include "' + xml.replace(".xml",".h") + '"\n')
 
-stdafx.close()
+inc.close()
