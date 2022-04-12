@@ -20,3 +20,7 @@ DATA/
 classxmlds3
 classxmlds3/
 classxmlds3/*
+autogen
+autogen/
+autogen/*
+*.tar
