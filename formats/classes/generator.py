@@ -28,7 +28,7 @@ types = [
 	["TYPE_CSTRING","char*",8],
 	["TYPE_HALF","half",2],
 	["TYPE_REAL","float",4],
-	["TYPE_VOID","void",8],
+	["TYPE_VOID","void*",8],
 	["TYPE_QSTRANSFORM","qstransform",64],
 	["TYPE_QUATERNION","quaternion",16],
 	["TYPE_TRANSFORM","transform",64],
@@ -62,30 +62,14 @@ def parseType(member):
 		['TYPE_POINTER','ctype']
 	]
 
-	#i = True
-	#temp = vtype
-
-	#resolves types to a "real" type. cursed. do not touch.
-	#while i == True:
-	#	m = False
-	#	for t in typeFixes:
-	#		if temp == t[0]:
-	#			m = True
-	#			temp = member.attrib.get(t[1])
-	#			if temp is None:
-	#				temp = member.attrib.get('vsubtype')
-	#			if temp == 'TYPE_CSTRING':
-	#				temp = 'char*'
-	#	if m == False:
-	#		info = getTypeInfo(temp)
-	#		i = False
-
 	temp = vtype
 
-	#this way is almost dumber. but its easy to modify
+	#stupid simple method to derive the type
 	if temp == 'TYPE_ARRAY':
 		temp = member.attrib.get('vsubtype')
 		if temp == 'TYPE_PONTER':
+			temp = member.attrib.get('ctype')
+		elif temp == 'TYPE_STRUCT':
 			temp = member.attrib.get('ctype')
 	elif temp == 'TYPE_ENUM':
 		temp = member.attrib.get('etype')
@@ -148,6 +132,11 @@ class hkMem:
 		self.t_size = info[2] #this CAN be a string!
 		#self.m_offset = hkmember.attrib.get('offset')
 
+		if hkmember.attrib.get('etype') is not None:
+			self.is_enum = True
+		else:
+			self.is_enum = False
+
 	def define(self):
 		ret = self.m_type
 
@@ -169,10 +158,20 @@ class hkMem:
 	def implementRead(self):
 		ret = "mread(&x->" + self.name + "," + str(self.t_size) + ",1,src);\n"
 
-		if isinstance(self.t_size,int):
+		if isinstance(self.t_size, int):
 			if self.m_size > self.t_size:
 				ret += "\tmseek(src," + str(self.m_size - self.t_size) + ",SEEK_CUR);\n"
 		
+		return ret
+
+	def implementWrite(self):
+		ret = "sum += " + str(self.t_size) + " - mwrite((char*)target->"  
+		ret += self.name + "," + str(self.t_size) + ",1,dst);\n"
+
+		if isinstance(self.t_size, int):
+			if self.m_size > self.t_size:
+				ret += "\tmseek(dst," + str(self.m_size - self.t_size) + ",SEEK_CUR);\n"
+
 		return ret
 
 class hkClass:
@@ -223,9 +222,13 @@ class hkClass:
 			for e in self.enums:
 				if str(e.name) == str(m.m_type):
 					match = True
-			
+
 			if match == False:
-				self.deps.append('"' + m.m_type + '.h"')
+				if m.is_enum == False:
+					self.deps.append('"' + m.m_type + '.h"')
+				else:
+					header = '"hkcd' + str(m.m_type).replace('Enum','') + '.h"'
+					self.deps.append(header)
 
 		if self.parent is not None:
 			self.deps.append('"' + self.parent + '.h"')
@@ -252,13 +255,12 @@ class hkClass:
 		for m in self.members:
 			ret += "\t" + m.define()
 
-		#ret += "\n\t" + self.name + "();\n"
-
 		ret += "\n\tstatic " + self.name + "* " + self.name + "Read(MEM* src);\n"
 
-		#write is currently not functional
-		#ret += "\n\tvoid write(MEM* src);\n"
-	
+		ret += "\n\tstatic int " + self.name + "Write(MEM* src, "
+
+		ret += self.name + "* target);\n"
+
 		ret += "};\n"
 
 		return ret
@@ -267,9 +269,9 @@ class hkClass:
 		ret = tag + "\n"
 
 		#headers
-		ret += '#pragma once\n#include "' + self.name + '.h"\n\n'
+		ret += '#pragma once\n#include "' + self.name + '.h"\n'
 
-		ret += "using half_float::half;\n"
+		ret += "using half_float::half;\n\n"
 
 		#reader
 		ret += self.name + "* " + self.name + "::" + self.name + "Read(MEM* src)\n{\n"
@@ -291,11 +293,25 @@ class hkClass:
 
 		ret += "};\n"
 
-		#writer disabled for now cause it's really bad
-		#ret += "\nvoid " + self.name + "::write(MEM* dst)\n{\n"
-		#for m in self.members:
-		#	ret += "\t" + m.implementWrite()
-		#ret += "};\n"
+		ret += "\n"
+
+		#writer
+		ret += "int " + self.name + "::" + self.name + "Write(MEM* dst, "
+		
+		ret+= self.name + "* target)\n{\n"
+
+		ret += "\tint sum = 0;\n\n"
+
+		if self.parent is not None:
+			ret += "\tsum += " + self.parent + "::" + self.parent
+			ret += "Write(dst, &target->base);\n"
+
+		for m in self.members:
+			ret += "\t" + m.implementWrite()
+
+		ret += "\n\treturn sum;\n"
+
+		ret += "};\n"
 
 		return ret
 
