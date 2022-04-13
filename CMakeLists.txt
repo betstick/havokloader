@@ -8,7 +8,6 @@ include_directories(${CMEM_DIR})
 set(HKLDR_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
 set(HKLDR_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
-set(HKLDR_LIBS 
-	"${HKLDR_DIR}/formats/hkx/hkx.c" 
-	PARENT_SCOPE
-)
+FILE(GLOB_RECURSE CLASSES "${$HKLDR_DIR}/formats/*.c")
+
+set(HKLDR_LIBS "${HKLDR_DIR}/formats/hkx/hkx.c ${CLASSES}" PARENT_SCOPE)
